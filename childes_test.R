@@ -1,0 +1,266 @@
+# ~~~ Retrieve & process data
+
+library(tidyverse)
+library(furrr)
+library(childesr)
+
+plan(multisession, workers = 4)
+
+d_eng_na <- get_transcripts(collection = "Eng-NA")
+
+df <- d_eng_na %>% 
+  filter(target_child_age <= 18) %>% 
+  select(
+    age = target_child_age,
+    name = target_child_name,
+    corpus = corpus_name
+  ) %>% 
+  group_by(name, corpus) %>% 
+  summarize(
+    start_age = min(age),
+    end_age = max(age),
+    .groups = 'drop'
+  )
+
+tokens <- df %>% 
+  mutate(data = future_map2(corpus, name, ~ {
+    get_tokens(
+      corpus = .x, 
+      target_child = .y, 
+      token = "*",
+      role_exclude = c("Child", "Target_Child")
+    )
+  }, .progress = TRUE))
+
+speakers <- tokens$data %>%
+  map("speaker_role") %>%
+  flatten_chr() %>% 
+  sort() %>% 
+  rle()
+
+tokens <- tokens %>% 
+  mutate(data = map(data, ~ {
+    .x %>% 
+      select(utterance_id, token_order, gloss, stem, part_of_speech, speaker_role) %>% 
+      mutate(utterance_id = as.integer(factor(utterance_id)))
+  })) %>% 
+  mutate(childID = 1L:n()) %>% 
+  relocate(childID)
+
+# write_rds(tokens, "C:/Users/jchoe/Desktop/tokens.rds")
+
+keys <- tokens %>% 
+  select(-data)
+
+# write_csv(keys, "keys.csv")
+
+
+# --- Write files
+
+df <- read_rds("C:/Users/jchoe/Desktop/tokens.rds")
+keys <- read_csv("keys.csv")
+
+df$data %>% 
+  imap(~ {
+    .x %>% 
+      mutate(childID = as.integer(.y)) %>% 
+      select(childID, utterance_id, gloss, part_of_speech)
+  }) %>% 
+  # iwalk(~ {arrow::write_parquet(.x, paste0("C:/Users/jchoe/Desktop/tokens_data/child", as.integer(.y), ".parquet"))})
+
+
+# --- Analysis
+
+library(tidyverse)
+library(slider)
+library(arrow)
+
+arrowdf <- open_dataset("tokens_data")
+
+key <- read_csv("keys.csv")
+
+moving_window <- function(ID, size = 5L) {
+  child_df <- arrowdf %>% 
+    filter(
+      childID == ID,
+      part_of_speech == "n"
+    ) %>% 
+    collect()
+  
+  memory_nested <- child_df %>% 
+    group_by(utterance_id) %>% 
+    summarize(
+      words = list(gloss),
+      .groups = 'drop'
+    ) %>% 
+    complete(utterance_id = 1:max(child_df$utterance_id)) %>% 
+    mutate(
+      buffer = slide(words, ~ sort(flatten_chr(.x)), .before = size), # memory buffer
+      recurring = map(buffer, ~ unique(.x[duplicated(.x)])), # within buffer window, which word(s) do you hear again?
+      recurring_n = map2(buffer, recurring, ~ rle(.x[.x %in% .y])$lengths),
+      recurrence = map2(recurring, recurring_n, paste)
+    ) %>% 
+    select(-contains("recurring"))
+  
+  memory_unnested <- memory_nested %>% 
+    rowwise() %>% 
+    filter(length(recurrence) > 0) %>% 
+    ungroup() %>% 
+    select(utterance_id, recurrence) %>% 
+    unnest(recurrence) %>% 
+    extract(recurrence, c("word", "times"), "(\\w+) (\\d+)", convert = TRUE)
+  
+  max_counts <- memory_unnested %>% 
+    group_by(word) %>% 
+    summarize(
+      max_times = max(times),
+      .groups = 'drop'
+    ) %>% 
+    arrange(-max_times)
+  
+  attr(max_counts, "size") <- size
+  attr(max_counts, "nested") <- memory_nested
+  attr(max_counts, "unnested") <- memory_unnested
+  
+  max_counts
+  
+}
+
+moving_window(60)
+
+df <- key %>% 
+  mutate(
+    n_utterances = arrowdf %>% 
+      group_by(childID) %>% 
+      collect() %>% 
+      summarize(max(utterance_id)) %>% 
+      pull(2),
+    data = map(childID, moving_window)
+  )
+
+# write_rds(df, "moving_window_5.rds")
+
+
+
+
+
+# ~~~ aggregate 
+
+df$data %>% 
+  bind_rows() %>% 
+  count(word, max_times, sort = TRUE) %>% 
+  filter(max_times > 3) %>% 
+  count(word, wt = n, sort = TRUE) %>% 
+  View()
+
+
+
+
+# ~~~ correlation plot
+
+library(GGally)
+
+unique_nouns <- arrowdf %>%
+  filter(part_of_speech == "n") %>%
+  group_by(childID) %>%
+  select(childID, gloss) %>%
+  collect() %>%
+  distinct() %>%
+  count() %>% 
+  pull(n)
+
+cor_plot <- df %>% 
+  mutate(
+    n_unique_nouns = unique_nouns,
+    n_words_recurring = map_dbl(data, nrow)
+  ) %>% 
+  select(contains("n_")) %>% 
+  ggpairs() +
+  hrbrthemes::theme_ipsum() +
+  theme(panel.grid.minor = element_blank())
+  
+
+
+
+
+
+
+# ~~~ ridge plot
+
+library(ggridges)
+library(grid)
+library(extrafont)
+
+ridge_plot_df <- df %>% 
+  mutate(max_times_dist = map(data, ~ count(.x, max_times))) %>% 
+  unnest(max_times_dist) %>% 
+  mutate(
+    ID = glue::glue("{name} [{corpus}] (n={n_utterances})"),
+    n_recurring = map_dbl(data, nrow)
+  )
+
+ridge_plot <- ridge_plot_df %>% 
+  mutate(ID = fct_reorder(ID, n_utterances)) %>% 
+  ggplot(aes(max_times, ID)) +
+  geom_density_ridges(
+    aes(fill = log(n_recurring)),
+    show.legend = FALSE
+  ) +
+  scale_fill_gradientn(colors = pals::ocean.tempo(100)) +
+  geom_text(
+    aes(x = 23.5, label = str_pad(n_recurring, 3)),
+    size = 2.5,
+    family = "Roboto"
+  ) +
+  labs(
+    title = "Local recurrences of Nouns in child-directed speech",
+    subtitle = "5-utterance moving window",
+    x = "Maximum recurrence count of a recurring noun",
+    y = NULL
+  ) +
+  coord_cartesian(clip = "off") +
+  scale_y_discrete(expand = expansion(c(.015, 0))) +
+  scale_x_continuous(limits = c(0, 23.5), expand = expansion(c(.02, .03))) +
+  theme_classic(base_family = "Roboto") +
+  theme(
+    plot.title.position = "plot",
+    plot.title = element_text(
+      family = "Roboto Slab",
+      size = 24,
+      margin = margin(b = .5, unit = "cm")
+    ),
+    plot.subtitle = element_text(
+      family = "Montserrat Medium",
+      size = 16,
+      hjust = .65,
+      margin = margin(b = .6, unit = "cm")
+    ),
+    axis.text = element_text(color = "black"),
+    axis.text.x = element_text(
+      size = 12,
+      margin = margin(t = .1, unit = "cm")
+    ),
+    axis.text.y = element_text(margin = margin(r = .1, unit = "cm")),
+    axis.title.x = element_text(
+      size = 16,
+      margin = margin(t = .3, unit = "cm")
+    ),
+    plot.margin = margin(1, 1, .5, 1, "cm"),
+  ) +
+  annotation_custom(
+    textGrob(
+      "Corpus (# utterances)",
+      x = -.11, y = 1.015,
+      gp = gpar(fontfamily = "Roboto Slab", fontsize = 11),
+    )
+  ) +
+  annotation_custom(
+    textGrob(
+      "# recurring",
+      x = .96, y = 1.015,
+      gp = gpar(fontfamily = "Roboto Slab", fontsize = 11),
+    )
+  )
+
+ggsave(ridge_plot, "ridgelines.pdf", width = 10, height = 16, units = "in", device = cairo_pdf)
+
