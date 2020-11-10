@@ -1,5 +1,5 @@
 # ~~~ Retrieve & process data
-
+setwd(here::here("final"))
 library(tidyverse)
 library(furrr)
 library(childesr)
@@ -67,3 +67,20 @@ df$data %>%
       select(childID, utterance_id, gloss, part_of_speech)
   }) %>% 
   iwalk(~ {arrow::write_parquet(.x, paste0("C:/Users/jchoe/Desktop/tokens_data/child", as.integer(.y), ".parquet"))})
+
+
+
+
+
+
+
+# ~~~
+# TODO: handle special word symbols - http://www.bu.edu/linguistics/UG/course/lx865-f02/local/childes-symbols.pdf
+# probably want to discard everything except "xx" and re-tag utterance_id
+
+arrowdf <- open_dataset("tokens_data")
+
+arrowdf %>%
+  filter(gloss %in% c("@", "xx", "xxx", "yy", "yyy", "www", "O", "&", "[?]", "()", "Oword", "O*word", "OOword")) %>%
+  collect() %>%
+  janitor::tabyl(gloss)
