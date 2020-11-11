@@ -165,6 +165,8 @@ df %>%
 
 ### of recurring nouns, correlation between max recurrence count and frequency
 
+# recurrence to frequency
+
 recurrence_to_freq <-
   map2(df$moving_window, df$childID, ~ {
     .x %>% 
@@ -187,9 +189,32 @@ recurrence_to_freq[[1]] %>%
   geom_point() +
   theme_classic()
 
+# frequency to recurrence
+
+freq_to_recurrence <-
+  map2(df$nouns_data, recurrence_to_freq, ~ {
+    .x %>% 
+      count(gloss) %>% 
+      rename(word = gloss, freq = n) %>% 
+      left_join(select(.y, -n), by = "word") %>% 
+      arrange(-freq)
+  })
+
+## table
+
 library(reactable)
 
-reactable_cor_df <- df %>% 
+options(reactable.theme = reactableTheme(
+  borderColor = "#dfe2e5",
+  stripedColor = "#f6f8fa",
+  highlightColor = "#f0f5f9",
+  cellPadding = "8px 12px",
+  style = list(fontFamily = "-apple-system, BlinkMacSystemFont, Segoe UI, Helvetica, Arial, sans-serif"),
+  searchInputStyle = list(width = "100%")
+  )
+)
+
+recurrence_to_freq_df <- df %>% 
   select(-where(is.list)) %>% 
   mutate(
     correlation = map_dbl(recurrence_to_freq, ~ cor(.x$max_times, .x$n)),
@@ -205,13 +230,14 @@ reactable(
     htmltools::div(
       style = "padding: 16px; background-color: #f1f1f1",
       reactable(
-        recurrence_to_freq[[i]],
+        freq_to_recurrence[[i]],
         outlined = TRUE,
         fullWidth = FALSE,
         showPageSizeOptions = TRUE
       )
     )
   })
+
 
 
 
