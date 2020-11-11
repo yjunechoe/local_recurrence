@@ -5,7 +5,7 @@ library(slider)
 library(arrow)
 
 arrowdf <- open_dataset("tokens_data")
-key <- read_csv("keys.csv")
+keys <- read_csv("keys.csv")
 
 collect_child <- function(ID, include_symbol = c("xx", "yy")) {
   # Special word symbols - http://www.bu.edu/linguistics/UG/course/lx865-f02/local/childes-symbols.pdf
@@ -44,7 +44,7 @@ moving_window <- function(ID, size = 5L, child_df = NULL) {
     ungroup() %>% 
     select(utterance_id, recurrence) %>% 
     unnest(recurrence) %>% 
-    extract(recurrence, c("word", "times"), "(\\w+) (\\d+)", convert = TRUE)
+    extract(recurrence, c("word", "times"), "^(.*) (\\d+)$", convert = TRUE)
   
   max_counts <- memory_unnested %>% 
     group_by(word) %>% 
@@ -62,18 +62,24 @@ moving_window <- function(ID, size = 5L, child_df = NULL) {
   
 }
 
-moving_window(60)
+moving_window(1)
 
 
 # ~~~ moving window
 
-df <- key %>% 
-  mutate(
-    n_utterances = arrowdf %>% 
+df <- keys %>% 
+  left_join(
+    arrowdf %>% 
       group_by(childID) %>% 
       collect() %>% 
-      summarize(max(utterance_id), .groups = 'drop') %>% 
-      pull(2),
+      summarize(
+        n_words = n(),
+        n_utterances = max(utterance_id),
+        .groups = 'drop'
+      ),
+    by = "childID"
+  ) %>% 
+  mutate(
     utterances = map(childID, ~{
       arrowdf %>% 
         filter(childID == .x) %>% 
@@ -83,9 +89,13 @@ df <- key %>%
           utterance = paste(gloss, collapse = " "),
           has_noun = any(part_of_speech == "n"),
           .groups = 'drop'
-        )
+        ) %>% 
+        select(utterance, has_noun)
     }),
-    nouns_data = map(childID, collect_child)
+    nouns_data = map(childID, ~ {
+      collect_child(.x) %>% 
+        select(utterance_id, gloss)
+    })
   )
 
 library(foreach)
@@ -104,9 +114,9 @@ with_progress({
 
 df
 
-# write_rds(select(df, -c(utterances, nouns_data)), "moving_window_10.rds")
+# write_rds(select(df, childID, moving_window), glue::glue("moving_window_{attr(df$moving_window[[1]], 'size')}.rds"))
 
-
+# read_rds("moving_window_10.rds")
 
 
 
@@ -125,7 +135,11 @@ df$moving_window %>%
   geom_histogram(color = "white", binwidth = 1) +
   scale_x_continuous(breaks = scales::pretty_breaks(10))
 
+
+
 # ~~~ correlation plot
+
+### counts of words, utterances, unique nouns, recurring nouns
 
 library(GGally)
 
@@ -141,7 +155,7 @@ unique_nouns <- arrowdf %>%
 df %>% 
   mutate(
     n_unique_nouns = unique_nouns,
-    n_words_recurring = map_dbl(nouns_data, nrow)
+    n_unique_recurring = map_dbl(moving_window, nrow)
   ) %>% 
   select(contains("n_")) %>% 
   ggpairs() +
@@ -149,8 +163,55 @@ df %>%
   theme(panel.grid.minor = element_blank())
   
 
+### of recurring nouns, correlation between max recurrence count and frequency
 
+recurrence_to_freq <-
+  map2(df$moving_window, df$childID, ~ {
+    .x %>% 
+      left_join(
+        df %>% 
+          filter(childID == .y) %>% 
+          pull(nouns_data) %>%
+          pluck(1) %>% 
+          count(gloss),
+        by = c("word" = "gloss")
+      ) %>% 
+      arrange(-max_times)
+  })
 
+map_dbl(recurrence_to_freq, ~ cor(.x$max_times, .x$n)) %>% 
+  hist()
+
+recurrence_to_freq[[1]] %>% 
+  ggplot(aes(max_times, n)) +
+  geom_point() +
+  theme_classic()
+
+library(reactable)
+
+reactable_cor_df <- df %>% 
+  select(-where(is.list)) %>% 
+  mutate(
+    correlation = map_dbl(recurrence_to_freq, ~ cor(.x$max_times, .x$n)),
+    n_recurring = map_dbl(recurrence_to_freq, nrow)
+  ) %>% 
+  janitor::adorn_rounding(2) %>% 
+  mutate(age = glue::glue("{start_age} ~ {end_age}")) %>% 
+  select(correlation, childID, age, n_utterances, n_words, n_recurring)
+
+reactable(
+  reactable_cor_df,
+  details = function(i) {
+    htmltools::div(
+      style = "padding: 16px; background-color: #f1f1f1",
+      reactable(
+        recurrence_to_freq[[i]],
+        outlined = TRUE,
+        fullWidth = FALSE,
+        showPageSizeOptions = TRUE
+      )
+    )
+  })
 
 
 
@@ -232,6 +293,19 @@ ridge_plot <- ridge_plot_df %>%
     )
   )
 
-# TODO: ggsave crashes with 10-window plot -- try ragg?
-# ggsave(ridge_plot, "ridgelines_10.pdf", width = 10, height = 16, units = "in", device = cairo_pdf)
+## Replace PLOT_NAME and PLOT_OBJECT
+pngfile <- fs::path(
+  getwd(), #knitr::fig_path(),
+  paste("ridgelines_10", ".png")
+)
+ragg::agg_png(
+  pngfile,
+  width = 10,
+  height = 16,
+  units = "in",
+  res = 300,
+)
+plot(ridge_plot) ; invisible(dev.off())
+
+# ggsave(ridge_plot, "ridgelines_5.pdf", width = 10, height = 16, units = "in", device = cairo_pdf)
 
