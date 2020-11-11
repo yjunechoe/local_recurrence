@@ -1,19 +1,17 @@
 library(tidyverse)
+library(magrittr)
 library(arrow)
 
 arrowdf <- open_dataset("tokens_data")
 keys <- read_csv("keys.csv")
 
-# read_rds("moving_window_10.rds")
+df <- read_rds("moving_window_10.rds")
 
-# ~~~ aggregate 
 
-df$moving_window %>% 
-  bind_rows() %>% 
-  count(word, max_times) %>% 
-  filter(max_times > 3) %>% 
-  count(word, wt = n, sort = TRUE) %>% 
-  View()
+
+# --- Analysis 1 
+### Are nouns that recur often across corpuses more likely to be learned?
+### Is that effect larger than how frequency predicts acquisition?
 
 df$moving_window %>% 
   bind_rows() %>% 
@@ -21,6 +19,54 @@ df$moving_window %>%
   geom_histogram(color = "white", binwidth = 1) +
   scale_x_continuous(breaks = scales::pretty_breaks(10))
 
+low_nouns_recurring <- map_lgl(df$moving_window, ~ nrow(.x) < 50)
+
+aggregate_noun_recurrences <- df$moving_window[!low_nouns_recurring] %>% 
+  bind_rows() %>% 
+  count(word, max_times) %>% 
+  filter(max_times > 3) %>% # at least 3 recurrences
+  count(word, wt = n, name = "local_recurrence", sort = TRUE)
+
+aggregate_noun_occurences <- df[!low_nouns_recurring, ] %>% 
+  transmute(word = map(nouns_data, ~ unique(.x$gloss))) %>% 
+  unnest(word) %>% 
+  count(word, name = "occurence", sort = TRUE)
+  
+aggregate_normalized <- aggregate_noun_recurrences %>% 
+  left_join(aggregate_noun_occurences, by = "word") %>% 
+  mutate(normalized = local_recurrence/occurence) %>% 
+  filter(occurence > 7) %>% # words that occur at least 10% of corpuses
+  arrange(-normalized)
+
+hist(aggregate_normalized$normalized)
+
+item_trajectories <- read_csv("item_trajectory_table.csv") %>% 
+  select(-c(1:3)) %>% 
+  pivot_longer(-age) %>% 
+  filter(age == 18) %>% 
+  mutate(name = str_extract(name, "^.*(?=\\n)")) %>%
+  rowwise() %>% 
+  mutate(name = ifelse(length(unique(str_extract_all(name, "\\w+")[[1]])) == 1, str_extract(name, "^\\w+"), name)) %>% 
+  select(word = name, trajectory = value)
+
+
+growth_corr_df <- aggregate_normalized %>% 
+  left_join(item_trajectories, by = "word") %>% 
+  arrange(-normalized)
+
+growth_corr_df %>% 
+  filter(!is.na(trajectory))
+
+growth_corr_df %>% 
+  na.omit() %$%
+  cor(normalized, trajectory)
+  
+
+growth_corr_df %>% 
+  na.omit() %>% 
+  ggplot(aes(normalized, trajectory)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
 
 
 # ~~~ correlation plot
@@ -163,7 +209,10 @@ ridge_plot <- ridge_plot_df %>%
   ) +
   coord_cartesian(clip = "off") +
   scale_y_discrete(expand = expansion(c(.015, 0))) +
-  scale_x_continuous(limits = c(0, 25.5), expand = expansion(c(.02, .03))) +
+  scale_x_continuous(
+    limits = c(0, 25.5),
+    expand = expansion(c(.02, .03))
+  ) +
   theme_classic(base_family = "Roboto") +
   theme(
     plot.title.position = "plot",

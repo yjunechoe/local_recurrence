@@ -114,4 +114,4 @@ with_progress({
 
 df
 
-write_rds(select(df, childID, moving_window), glue::glue("moving_window_{attr(df$moving_window[[1]], 'size')}.rds"))
+write_rds(df, glue::glue("moving_window_{attr(df$moving_window[[1]], 'size')}.rds"))
