@@ -1,5 +1,5 @@
 # ~~~ setup
-
+setwd(here::here("final"))
 library(tidyverse)
 library(slider)
 library(arrow)
@@ -104,7 +104,7 @@ with_progress({
 
 df
 
-# write_rds(df, "moving_window_10.rds")
+# write_rds(select(df, -c(utterances, nouns_data)), "moving_window_10.rds")
 
 
 
