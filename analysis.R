@@ -170,6 +170,7 @@ ridge_plot_df <- df %>%
 
 ridge_plot <- ridge_plot_df %>% 
   mutate(ID = fct_reorder(ID, n_utterances)) %>% 
+  filter(max_times < 25) %>% 
   ggplot(aes(max_times, ID)) +
   geom_density_ridges(
     aes(fill = log(n_recurring)),
@@ -231,5 +232,6 @@ ridge_plot <- ridge_plot_df %>%
     )
   )
 
-ggsave(ridge_plot, "ridgelines_10.pdf", width = 10, height = 16, units = "in", device = cairo_pdf)
+# TODO: ggsave crashes with 10-window plot -- try ragg?
+# ggsave(ridge_plot, "ridgelines_10.pdf", width = 10, height = 16, units = "in", device = cairo_pdf)
 
