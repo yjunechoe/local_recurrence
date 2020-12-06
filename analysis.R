@@ -2,6 +2,8 @@ library(tidyverse)
 library(magrittr)
 library(arrow)
 
+setwd(here::here("final"))
+
 arrowdf <- open_dataset("tokens_data")
 keys <- read_csv("keys.csv")
 
@@ -19,12 +21,12 @@ df$moving_window %>%
   geom_histogram(color = "white", binwidth = 1) +
   scale_x_continuous(breaks = scales::pretty_breaks(10))
 
-low_nouns_recurring <- map_lgl(df$moving_window, ~ nrow(.x) < 50)
+# filter out corpus w/ low local_recurrences
+low_nouns_recurring <- rep(FALSE, nrow(df))  # map_lgl(df$moving_window, ~ nrow(.x) < 30)
 
 aggregate_noun_recurrences <- df$moving_window[!low_nouns_recurring] %>% 
   bind_rows() %>% 
   count(word, max_times) %>% 
-  filter(max_times > 3) %>% # at least 3 recurrences
   count(word, wt = n, name = "local_recurrence", sort = TRUE)
 
 aggregate_noun_occurences <- df[!low_nouns_recurring, ] %>% 
@@ -32,10 +34,20 @@ aggregate_noun_occurences <- df[!low_nouns_recurring, ] %>%
   unnest(word) %>% 
   count(word, name = "occurence", sort = TRUE)
   
+aggregate_noun_freq <- df[!low_nouns_recurring, ] %>% 
+  mutate(word = map(nouns_data, ~ count(.x, gloss))) %>% 
+  transmute(word = map2(word, n_words, ~ mutate(.x, freq = log(n/.y)))) %>% 
+  unnest(word) %>% 
+  group_by(gloss) %>% 
+  summarize(freq = mean(freq), .groups = 'drop') %>% 
+  rename(word = gloss)
+
+
 aggregate_normalized <- aggregate_noun_recurrences %>% 
   left_join(aggregate_noun_occurences, by = "word") %>% 
+  left_join(aggregate_noun_freq, by = "word") %>% 
   mutate(normalized = local_recurrence/occurence) %>% 
-  filter(occurence > 7) %>% # words that occur at least 10% of corpuses
+  filter(occurence > 6) %>% # words that occur at least 10% of corpuses
   arrange(-normalized)
 
 hist(aggregate_normalized$normalized)
@@ -51,16 +63,17 @@ item_trajectories <- read_csv("item_trajectory_table.csv") %>%
 
 
 growth_corr_df <- aggregate_normalized %>% 
+  filter(word %in% nouns$Word) %>% 
   left_join(item_trajectories, by = "word") %>% 
   arrange(-normalized)
 
 growth_corr_df %>% 
   filter(!is.na(trajectory))
 
+# local_recurrence and trajectory
 growth_corr_df %>% 
   na.omit() %$%
   cor(normalized, trajectory)
-  
 
 growth_corr_df %>% 
   na.omit() %>% 
@@ -68,6 +81,32 @@ growth_corr_df %>%
   geom_point() +
   geom_smooth(method = 'lm')
 
+
+# frequency and trajectory
+growth_corr_df %>% 
+  na.omit() %$%
+  cor(freq, trajectory)
+
+growth_corr_df %>% 
+  na.omit() %>% 
+  ggplot(aes(freq, trajectory)) +
+  geom_point() +
+  geom_smooth(method = 'lm')
+
+
+library(GGally)
+
+# all three
+growth_corr_df %>% 
+  select(freq, normalized, trajectory) %>% 
+  ggpairs() +
+  hrbrthemes::theme_ipsum() +
+  theme(panel.grid.minor = element_blank())
+
+
+mdl <- lm(trajectory ~ normalized * freq, data = growth_corr_df)
+summary(mdl)
+car::vif(mdl)
 
 # ~~~ correlation plot
 
@@ -169,7 +208,6 @@ reactable(
       )
     )
   })
-
 
 
 

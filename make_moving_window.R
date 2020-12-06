@@ -7,15 +7,43 @@ library(arrow)
 arrowdf <- open_dataset("tokens_data")
 keys <- read_csv("keys.csv")
 
+
+# SUBTLEX-US
+### zipped tab-delim file from: https://www.ugent.be/pp/experimentele-psychologie/en/research/documents/subtlexus
+subtlex <- vroom::vroom("subtlex-us.zip")
+
+nouns <- subtlex %>% 
+  select(Word, All_PoS_SUBTLEX, Percentage_dom_PoS) %>% 
+  filter(str_extract(All_PoS_SUBTLEX, "^\\w+(?=\\.)") == "Noun") # dominant nouns
+
+# child-produced nouns
+child_production_nouns <- keys %>% 
+  mutate(production = future_map2(corpus, name, ~ {
+    get_tokens(
+      corpus = .x, 
+      target_child = .y, 
+      token = "*",
+    ) %>% 
+      filter(
+        speaker_role == "Target_Child",
+        part_of_speech == "n",
+        gloss %in% nouns$Word
+      )
+  }, .progress = TRUE))
+
+
+## functions
+
 collect_child <- function(ID, include_symbol = c("xx", "yy")) {
   # Special word symbols - http://www.bu.edu/linguistics/UG/course/lx865-f02/local/childes-symbols.pdf
   arrowdf %>% 
     filter(
       childID == ID,
-      part_of_speech == "n" | gloss %in% include_symbol
+      ((part_of_speech == "n" & gloss %in% nouns$Word) | gloss %in% include_symbol)
     ) %>% 
     collect()
 }
+
 
 moving_window <- function(ID, size = 5L, child_df = NULL) {
   
@@ -102,7 +130,7 @@ library(foreach)
 library(progressr)
 library(doFuture)
 registerDoFuture()
-plan(multisession, workers = 4)
+plan(multisession, workers = availableCores() - 1)
 
 with_progress({
   p <- progressor(along = 1L:nrow(df))

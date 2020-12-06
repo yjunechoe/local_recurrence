@@ -28,7 +28,7 @@ tokens <- df %>%
       corpus = .x, 
       target_child = .y, 
       token = "*",
-      role_exclude = c("Child", "Target_Child")
+      role_exclude = c("Target_Child")
     )
   }, .progress = TRUE))
 
@@ -71,16 +71,3 @@ df$data %>%
 
 
 
-
-
-
-# ~~~
-# TODO: handle special word symbols - http://www.bu.edu/linguistics/UG/course/lx865-f02/local/childes-symbols.pdf
-# probably want to discard everything except "xx" and re-tag utterance_id
-
-arrowdf <- open_dataset("tokens_data")
-
-arrowdf %>%
-  filter(gloss %in% c("@", "xx", "xxx", "yy", "yyy", "www", "O", "&", "[?]", "()", "Oword", "O*word", "OOword")) %>%
-  collect() %>%
-  janitor::tabyl(gloss)
