@@ -1,8 +1,8 @@
 # Repetition Events
 
-**Repetition events** are defined as a sequence of moving windows over utterances where two or more occurrences of the same word are continuously present. The concept of a repetition event is motivated by the idea that word learning is driven by **hypothesis testing**. Assuming that this process must take place within some local domain (a _memory buffer_), a repetition event is the period of time during which the child gets to test a hypothesis for the referent of a word (i.e., has a chance of learning that word).
+A **repetition event** is defined as a sequence of moving windows over utterances where two or more occurrences of the same word are continuously present. The concept of a repetition event is motivated by the idea that word learning is driven by **hypothesis testing**. Assuming that this process must take place within some local domain (a _memory buffer_), a repetition event is the period of time during which the child gets to test a hypothesis for the referent of a word (i.e., has a chance of learning that word).
 
-A schematic of the moving window algorithm:
+A schematic of the moving window algorithm is shown below:
 
 <img src="img/cookie_windows.png" alt="example repetition event" width="800"/>
 
@@ -38,9 +38,10 @@ root
     |   repetition_trajectory_plot.png
 </pre>
 
+
 ## Scripts, and how to run them
 
-- `processing.R` is a processing script that grabs data from the CHILDES database and formats it for use in the `make_moving_window.R` script. The result of this script is provided in `data/tokens_data`, so this does not need to be ran.
+- `processing.R` is a processing script that grabs data from the CHILDES database and formats it for use in the `make_moving_window.R` script. The result of this script is provided in `data/tokens_data`, so this does not need to be ran (the data is formatted in parquet, with Hive-style partitioning - it looks strange but do not touch!).
 
 - `make_moving_window.R` runs the moving window algorithm using the data in `data/tokens_data`. It outputs some images to `img/` and generates a file `data/moving_windows/moving_windows_5.rds` by default (not provided). The `5` in the name reflects the size of the moving window, which updates automatically if you provide a different number for the size of the moving window in the script. 
 
