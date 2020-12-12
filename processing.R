@@ -1,15 +1,15 @@
 # ~~~ Retrieve & process data
-setwd(here::here("final"))
 library(tidyverse)
+library(here)
 library(furrr)
 library(childesr)
 
-plan(multisession, workers = 4)
+plan(multisession, workers = 7)
 
 d_eng_na <- get_transcripts(collection = "Eng-NA")
 
 df <- d_eng_na %>% 
-  filter(target_child_age <= 18) %>% 
+  filter(between(target_child_age, 12, 18)) %>% 
   select(
     age = target_child_age,
     name = target_child_name,
@@ -38,7 +38,7 @@ speakers <- tokens$data %>%
   sort() %>% 
   rle()
 
-tokens <- tokens %>% 
+df <- tokens %>% 
   mutate(data = map(data, ~ {
     .x %>% 
       select(utterance_id, token_order, gloss, stem, part_of_speech, speaker_role) %>% 
@@ -47,18 +47,12 @@ tokens <- tokens %>%
   mutate(childID = 1L:n()) %>% 
   relocate(childID)
 
-write_rds(tokens, "C:/Users/jchoe/Desktop/tokens.rds")
-
 keys <- tokens %>% 
   select(-data)
 
-write_csv(keys, "keys.csv")
-
-
 # --- Write files
 
-df <- read_rds("C:/Users/jchoe/Desktop/tokens.rds")
-keys <- read_csv("keys.csv")
+write_csv(keys, here("data", "keys.csv"))
 
 df$data %>% 
   imap(~ {
@@ -66,8 +60,5 @@ df$data %>%
       mutate(childID = as.integer(.y)) %>% 
       select(childID, utterance_id, gloss, part_of_speech)
   }) %>% 
-  iwalk(~ {arrow::write_parquet(.x, paste0("C:/Users/jchoe/Desktop/tokens_data/child", as.integer(.y), ".parquet"))})
-
-
-
+  iwalk(~ {arrow::write_parquet(.x, paste0(here("data", "tokens_data", "child"), as.integer(.y), ".parquet"))})
 
