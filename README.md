@@ -1,4 +1,13 @@
-# Directory Structure
+# Repetition Events
+
+**Repetition events** are defined as a sequence of moving windows over utterances where two or more occurrences of the same word are continuously present. The concept of a repetition event is motivated by the idea that word learning is driven by **hypothesis testing**. Assuming that this process must take place within some local domain (a _memory buffer_), a repetition event is the period of time during which the child gets to test a hypothesis for the referent of a word (i.e., has a chance of learning that word).
+
+A schematic of the moving window algorithm:
+
+<img src="img/cookie_windows.png" alt="example repetition event" width="500"/>
+
+
+## Directory Structure
 
 <pre>
 root
@@ -29,7 +38,7 @@ root
     |   repetition_trajectory_plot.png
 </pre>
 
-# Scripts, and how to run them
+## Scripts, and how to run them
 
 - `processing.R` is a processing script that grabs data from the CHILDES database and formats it for use in the `make_moving_window.R` script. The result of this script is provided in `data/tokens_data`, so this does not need to be ran.
 
