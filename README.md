@@ -4,7 +4,7 @@
 
 A schematic of the moving window algorithm:
 
-<img src="img/cookie_windows.png" alt="example repetition event" width="500"/>
+<img src="img/cookie_windows.png" alt="example repetition event" width="800"/>
 
 
 ## Directory Structure
