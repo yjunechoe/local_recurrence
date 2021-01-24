@@ -41,11 +41,11 @@ root
 
 ## Scripts, and how to run them
 
-- `processing.R` is a processing script that grabs data from the CHILDES database and formats it for use in the `make_moving_window.R` script. The result of this script is provided in `data/tokens_data`, so this does not need to be ran (the data is formatted in parquet, with Hive-style partitioning - it looks strange but do not touch!).
+- `processing.R` is a processing script that grabs data from the CHILDES database and formats it for use in the `make_moving_window.R` script. The result of this script is provided in `data/tokens_data`, so this does not need to be ran again.
 
-- `make_moving_window.R` runs the moving window algorithm using the data in `data/tokens_data`. It outputs some images to `img/` and generates a file `data/moving_windows/moving_windows_5.rds` by default (not provided). The `5` in the name reflects the size of the moving window, which updates automatically if you provide a different number for the size of the moving window in the script. 
+- `make_moving_window.R` runs the moving window algorithm using the data in `data/tokens_data`. It outputs some images to `img/` and generates a file `data/moving_windows/moving_windows_5.rds` by default (not provided). The `5` in the name of the .rds file reflects the size of the moving window, which updates automatically if you provide a different number for the size of the moving window in this script. 
 
-- `processing.R` is the main script. It takes the moving window data generated from `make_moving_window.R` and runs some analyses, mainly correlations. Figures are saved to `img/`
+- `analysis.R` is the main script. It takes the moving window data generated from `make_moving_window.R` and runs some exploratory analyses, mainly correlations. Figures are saved to `img/`
 
-- `PbV_sims.R` is a standalone script that runs simulations on four variants of Propose but Verify. To run this, make sure to also download `gold_training_parsed.csv` and `rollins_training.rds` from [this other repo](https://github.com/yjunechoe/Ling570_pset1) and put them in the root
+- `PbV_sims.R` is a standalone script that runs simulations on four variants of Propose but Verify. This also produces some figures saved to `img/`. To run this, make sure to also download `gold_training_parsed.csv` and `rollins_training.rds` from [this other repo](https://github.com/yjunechoe/Ling570_pset1) and put them in the root
 
